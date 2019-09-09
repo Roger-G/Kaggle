@@ -5,10 +5,16 @@ import matplotlib.pyplot as plt
 from sklearn import linear_model
 from sklearn.impute import SimpleImputer
 import datetime
+import warnings
+from sklearn.exceptions import DataConversionWarning
 import seaborn as sns
 from sklearn.model_selection import cross_val_score,train_test_split,learning_curve
 from sklearn.metrics import accuracy_score
 from sklearn.ensemble import BaggingRegressor
+# Suppress warnings
+warnings.filterwarnings(action='ignore', category=DataConversionWarning)
+warnings.filterwarnings(action='ignore', category=DeprecationWarning)
+warnings.filterwarnings(action='ignore', category=FutureWarning)
 ###############################################################################
 data_train = pd.read_csv("/Users/gaojie/Kaggle/data/titanic/train.csv")
 data_test = pd.read_csv("/Users/gaojie/Kaggle/data/titanic/test.csv")
@@ -23,7 +29,7 @@ plt.ylabel('number of people')
 plt.legend(('survivors','no-survivors'),loc='best')
 g=sns.FacetGrid(data_train,col='Survived')
 g.map(plt.hist,'Age',alpha=.5,bins=30)
-g.add_legend();
+g.add_legend()
 gr=sns.FacetGrid(data_train,col='Survived')
 gr.map(plt.hist,'Fare',bins=30)
 
@@ -31,6 +37,8 @@ gr.map(plt.hist,'Fare',bins=30)
 g2=sns.FacetGrid(data_train,col='Pclass')
 g2.map(plt.hist,'Fare',bins=10)
 # plt.show()
+# plt.draw()
+# plt.pause(0.001)
 for dataset in combine:
     dataset['Title']=dataset.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
     dataset['Title']=dataset['Title'].replace(['Lady','Countness','Capt','Col',\
@@ -46,7 +54,7 @@ for dataset in combine:
 # print(data_train.Title[data_train['Survived']==1].value_counts())
 # plt.show()
 
-
+data_train[['Pclass','Survived']].groupby(['Pclass']).mean().plot(kind='bar')
 # fig4=plt.figure()
 a=data_train.Fare[data_train.Survived==1].mean()
 b=data_train.Fare[data_train.Survived==0].mean()
@@ -63,12 +71,15 @@ fig4=plt.figure()
 data_train['Familysize']=data_train['SibSp']+data_train['Parch']+1
 data_train[['Familysize','Survived']].groupby(['Familysize']).mean().plot(kind='bar')
 # plt.show()
+# plt.draw()
+# plt.pause(0.001)
 for dataset in combine:
     dataset['Familysize']=dataset['SibSp']+dataset['Parch']+1
-    dataset['Goodfamilysize']=0
-    dataset.Goodfamilysize[dataset['Familysize']==2]=1
-    dataset.Goodfamilysize[dataset['Familysize']==3]=1
-    dataset.Goodfamilysize[dataset['Familysize']==4]=1
+    dataset['Goodfamilysize']=1
+    dataset.Goodfamilysize[dataset['Familysize']==1]=2
+    dataset.Goodfamilysize[dataset['Familysize']==2]=3
+    dataset.Goodfamilysize[dataset['Familysize']==3]=3
+    dataset.Goodfamilysize[dataset['Familysize']==4]=3
 
 
 ###############################################################################
@@ -83,6 +94,7 @@ def set_mising_ages(df):
     rfr.fit(X,y)
     predictedAges=rfr.predict(unknown_age[:,1:])
     df.loc[(df.Age.isnull()),'Age']=predictedAges
+    # df.loc[(df.Age.isnull()),'Age']=df.Age.median()
     return df,rfr
 def set_mising_Fare(df):
     fare_df=df[['Fare','Age','Parch','SibSp','Pclass']]
@@ -94,6 +106,7 @@ def set_mising_Fare(df):
     rfr.fit(X,y)
     predictedfare=rfr.predict(unknown_fare[:,1:])
     df.loc[(df.Fare.isnull()),'Fare']=predictedfare
+    # df.loc[(df.Fare.isnull()),'Fare']=df.Fare.median()
     return df
 def set_Cabin_type(df):
     df.loc[(df.Cabin.notnull()),'Cabin']='Yes'
@@ -127,7 +140,7 @@ scaler.fit(df_train['Fare'].values.reshape(-1,1))
 df_train['Fare_scale']=scaler.transform(df_train['Fare'].values.reshape(-1,1))
 df_train.drop(['Fare'],axis=1,inplace=True)
 
-train_df = df_train.filter(regex='Survived|Title|Age|Parch|Fare_.*|Sex_.*|Pclass_.*')
+train_df = df_train.filter(regex='Survived|Title|Goodfamilysize|Age|Parch|Fare_.*|Sex_.*|Pclass_.*')
 train_np = train_df.values
 X=train_np[:,1:]
 
@@ -135,7 +148,7 @@ y=train_np[:,0]
 ###############################################################################
 # Build a Model 
 
-clf=linear_model.LogisticRegression(C=1.0,penalty='l1',tol=1e-6)
+clf=linear_model.LogisticRegression(C=1.0,penalty='l1',tol=1e-6,solver='liblinear')
 clf.fit(X,y)
 print (cross_val_score(clf, X, y, cv=5))
 
@@ -178,11 +191,11 @@ df_test.drop(['Pclass','Name','Sex','Cabin','Embarked','Ticket'],axis=1,inplace=
 df_test['Fare_scaled']=scaler.transform(df_test['Fare'].values.reshape(-1,1))
 # df_test.loc[ (df_test.Fare_scaled.isnull()), 'Fare_scaled' ] = 0
 df_test.drop(['Fare'],axis=1,inplace=True)
-test=df_test.filter(regex='Title|Age|Parch|Fare_.*|Sex_.*|Pclass_.*')
+test=df_test.filter(regex='Title|Age|Goodfamilysize|Parch|Fare_.*|Sex_.*|Pclass_.*')
 
 predictions= clf.predict(test)
 result = pd.DataFrame({'PassengerId':data_test['PassengerId'].values,'Survived':predictions.astype(np.int32)})
-result.to_csv("/Users/gaojie/Kaggle/data/titanic/logistic_regression_predictions13.csv",index=False)
+result.to_csv("/Users/gaojie/Kaggle/data/titanic/logistic_regression_predictions18.csv",index=False)
 
 # test.shape (891,14)
 # test.fillna(test.mean(),inplace=True)
@@ -207,7 +220,7 @@ def plot_learning_curve(estimator, title, X, y, ylim=None, cv=None, n_jobs=1,
             plt.ylim(*ylim)
         plt.xlabel(u"training data")
         plt.ylabel(u"score")
-        plt.gca().invert_yaxis()
+        # plt.gca().invert_yaxis()
         plt.grid()
     
         plt.fill_between(train_sizes, train_scores_mean - train_scores_std, train_scores_mean + train_scores_std, 
@@ -218,9 +231,9 @@ def plot_learning_curve(estimator, title, X, y, ylim=None, cv=None, n_jobs=1,
         plt.plot(train_sizes, test_scores_mean, 'o-', color="r", label="test score")
     
         plt.legend(loc="best")
-        
-        plt.draw()
         plt.show()
+        # plt.draw()
+        # plt.pause(0.001)   
         plt.gca().invert_yaxis()
     
     midpoint = ((train_scores_mean[-1] + train_scores_std[-1]) + (test_scores_mean[-1] - test_scores_std[-1])) / 2
@@ -228,6 +241,7 @@ def plot_learning_curve(estimator, title, X, y, ylim=None, cv=None, n_jobs=1,
     return midpoint, diff
 
 plot_learning_curve(clf,'learning curve', X, y)
+
 
 ###############################################################################
 #Model ensemble
