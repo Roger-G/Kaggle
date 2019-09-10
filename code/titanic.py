@@ -11,6 +11,8 @@ import seaborn as sns
 from sklearn.model_selection import cross_val_score,train_test_split,learning_curve
 from sklearn.metrics import accuracy_score
 from sklearn.ensemble import BaggingRegressor
+import multiprocessing
+multiprocessing.set_start_method('spawn', True)
 # Suppress warnings
 warnings.filterwarnings(action='ignore', category=DataConversionWarning)
 warnings.filterwarnings(action='ignore', category=DeprecationWarning)
@@ -71,8 +73,6 @@ fig4=plt.figure()
 data_train['Familysize']=data_train['SibSp']+data_train['Parch']+1
 data_train[['Familysize','Survived']].groupby(['Familysize']).mean().plot(kind='bar')
 # plt.show()
-# plt.draw()
-# plt.pause(0.001)
 for dataset in combine:
     dataset['Familysize']=dataset['SibSp']+dataset['Parch']+1
     dataset['Goodfamilysize']=1
@@ -118,14 +118,18 @@ data_train=set_Cabin_type(data_train)
 dummies_Embarked = pd.get_dummies(data_train['Embarked'],prefix='Embarked')
 dummies_Sex=pd.get_dummies(data_train['Sex'],prefix='Sex')
 dummies_Pclass= pd.get_dummies(data_train['Pclass'],prefix='Pclass')
+# data_train.Sex[data_train.Sex=='female']=1
+# data_train.Sex[data_train.Sex=='male']=0
 
-data_train.loc[ data_train['Age'] <= 4, 'Age'] = 0
-data_train.loc[(data_train['Age'] > 4) & (data_train['Age'] <= 14), 'Age'] = 1
-data_train.loc[(data_train['Age'] > 14) & (data_train['Age'] <= 30), 'Age'] = 2
-data_train.loc[(data_train['Age'] > 30) & (data_train['Age'] <= 57), 'Age'] = 3
-data_train.loc[ data_train['Age'] > 57, 'Age']
+
+data_train.loc[ data_train['Age'] <= 16, 'Age'] = 0
+# data_train.loc[(data_train['Age'] > 4) & (data_train['Age'] <= 14), 'Age'] = 1
+data_train.loc[(data_train['Age'] > 16) & (data_train['Age'] <= 33), 'Age'] = 2
+data_train.loc[(data_train['Age'] > 33) & (data_train['Age'] <= 57), 'Age'] = 3
+data_train.loc[ data_train['Age'] > 57, 'Age']=4
 # data_train
 df_train=pd.concat([data_train,dummies_Embarked,dummies_Sex,dummies_Pclass],axis=1)
+df_train['pclass_sex']=df_train['Pclass'] * df_train['Sex_male']
 df_train.drop(['Pclass','Name','Sex','Ticket','Cabin','Embarked'],axis=1,inplace=True)
 
 
@@ -140,7 +144,7 @@ scaler.fit(df_train['Fare'].values.reshape(-1,1))
 df_train['Fare_scale']=scaler.transform(df_train['Fare'].values.reshape(-1,1))
 df_train.drop(['Fare'],axis=1,inplace=True)
 
-train_df = df_train.filter(regex='Survived|Title|Goodfamilysize|Age|Parch|Fare_.*|Sex_.*|Pclass_.*')
+train_df = df_train.filter(regex='Survived|Title|Goodfamilysize|Age|Parch|Fare_.*|Sex_.*|Pclass_.*|pclass_sex')
 train_np = train_df.values
 X=train_np[:,1:]
 
@@ -169,10 +173,10 @@ X_age = null_age[:, 1:]
 predictedAges = rfr.predict(X_age)
 data_test.loc[ (data_test.Age.isnull()), 'Age' ] = predictedAges
 data_test=set_mising_Fare(data_test)
-data_test.loc[ data_test['Age'] <= 4, 'Age'] = 0
-data_test.loc[(data_test['Age'] > 4) & (data_test['Age'] <= 14), 'Age'] = 1
-data_test.loc[(data_test['Age'] > 14) & (data_test['Age'] <= 30), 'Age'] = 2
-data_test.loc[(data_test['Age'] > 30) & (data_test['Age'] <= 57), 'Age'] = 3
+data_test.loc[ data_test['Age'] <= 16, 'Age'] = 0
+data_test.loc[(data_test['Age'] > 16) & (data_test['Age'] <= 33), 'Age'] = 1
+data_test.loc[(data_test['Age'] > 33) & (data_test['Age'] <= 57), 'Age'] = 2
+# data_test.loc[(data_test['Age'] > ) & (data_test['Age'] <= 57), 'Age'] = 3
 data_test.loc[ data_test['Age'] > 57, 'Age']
 
 
@@ -181,9 +185,13 @@ dummies_Cabin=pd.get_dummies(data_test['Cabin'],prefix='Cabin')
 dummies_Embarked = pd.get_dummies(data_test['Embarked'],prefix='Embarked')
 dummies_Sex=pd.get_dummies(data_test['Sex'],prefix='Sex')
 dummies_Pclass= pd.get_dummies(data_test['Pclass'],prefix='Pclass')
+
+
 # dummies_Cabin=pd.get_dummies(data_test['Cabin'],prefix='Cabin')
 # 如何concat 
 df_test=pd.concat([data_test,dummies_Embarked,dummies_Cabin,dummies_Sex,dummies_Pclass],sort=False,axis=1)
+df_test['pclass_sex']=df_test['Pclass']*df_test['Sex_male']
+
 df_test.drop(['Pclass','Name','Sex','Cabin','Embarked','Ticket'],axis=1,inplace=True)
 
 # df_test=df_test[df_test.Age>18]
@@ -191,11 +199,22 @@ df_test.drop(['Pclass','Name','Sex','Cabin','Embarked','Ticket'],axis=1,inplace=
 df_test['Fare_scaled']=scaler.transform(df_test['Fare'].values.reshape(-1,1))
 # df_test.loc[ (df_test.Fare_scaled.isnull()), 'Fare_scaled' ] = 0
 df_test.drop(['Fare'],axis=1,inplace=True)
-test=df_test.filter(regex='Title|Age|Goodfamilysize|Parch|Fare_.*|Sex_.*|Pclass_.*')
+
+test=df_test.filter(regex='Title|Age|Goodfamilysize|Parch|Fare_.*|Sex_.*|Pclass_.*|pclass_sex')
+############################################# bagging
+# clf = linear_model.LogisticRegression(C=1.0, penalty='l1', tol=1e-6)
+# bagging_clf=BaggingRegressor(base_estimator=linear_model.LogisticRegression(),n_estimators=10,bootstrap=True, bootstrap_features=False)
+# bagging_clf.fit(X,y)
+# predictions= bagging_clf.predict(test)
+# result = pd.DataFrame({'PassengerId':data_test['PassengerId'].values,'Survived':predictions.astype(np.int32)})
+# result.to_csv("/Users/gaojie/Kaggle/data/titanic/logistic_regression_predictions12.csv",index=False)
+
+# pd.DataFrame({'columns':list(train_df.columns)[1:],'coef':list(clf.coef_.T)})
+####no bagging
 
 predictions= clf.predict(test)
 result = pd.DataFrame({'PassengerId':data_test['PassengerId'].values,'Survived':predictions.astype(np.int32)})
-result.to_csv("/Users/gaojie/Kaggle/data/titanic/logistic_regression_predictions18.csv",index=False)
+result.to_csv("/Users/gaojie/Kaggle/data/titanic/logistic_regression_predictions19.csv",index=False)
 
 # test.shape (891,14)
 # test.fillna(test.mean(),inplace=True)
@@ -245,11 +264,3 @@ plot_learning_curve(clf,'learning curve', X, y)
 
 ###############################################################################
 #Model ensemble
-# clf = linear_model.LogisticRegression(C=1.0, penalty='l1', tol=1e-6)
-# bagging_clf=BaggingRegressor(base_estimator=linear_model.LogisticRegression(C=1.0, penalty='l1', tol=1e-6),n_estimators=20,max_samples=1,
-# max_features=1.0,bootstrap=True, bootstrap_features=False)
-# bagging_clf.fit(X,y)
-# predictions= bagging_clf.predict(test)
-# result = pd.DataFrame({'PassengerId':data_test['PassengerId'].values,'Survived':predictions.astype(np.int32)})
-# result.to_csv("/Users/gaojie/Kaggle/data/titanic/logistic_regression_predictions12.csv",index=False)
-# pd.DataFrame({'columns':list(train_df.columns)[1:],'coef':list(clf.coef_.T)})
